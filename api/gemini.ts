@@ -2,12 +2,15 @@ import { GoogleGenAI } from "@google/genai";
 
 export default async function handler(req, res) {
 
+  if (req.method !== 'POST') {
+    return res.status(405).json({ error: 'Only POST allowed' });
+  }
+
   const ai = new GoogleGenAI({
     apiKey: process.env.GEMINI_API_KEY
   });
 
   try {
-
     const { base64, mimeType } = req.body;
 
     const response = await ai.models.generateContent({
