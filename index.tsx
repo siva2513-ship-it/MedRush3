@@ -1,4 +1,4 @@
-console.log("ENV CHECK:", import.meta.env.VITE_GEMINI_API_KEY);
+console.log("ENV CHECK:", __APP_ENV__);
 
 import React, { useState, useRef } from 'react';
 import { createRoot } from 'react-dom/client';
@@ -638,7 +638,7 @@ const MedRushApp = () => {
     initAudio();
     setIsPlayingAudio(true);
     try {
-      const ai = new GoogleGenAI({ apiKey: import.meta.env.VITE_GEMINI_API_KEY });
+      const ai = new GoogleGenAI({ apiKey: __APP_ENV__ });
       const response = await ai.models.generateContent({
         model: "gemini-2.5-flash-preview-tts",
         contents: [{ parts: [{ text: `Say this in ${lang}: ${text}` }] }],
@@ -667,7 +667,7 @@ const MedRushApp = () => {
     reader.onload = async (ev) => {
       const base64Data = (ev.target?.result as string).split(',')[1];
       try {
-        const ai = new GoogleGenAI({ apiKey: import.meta.env.VITE_GEMINI_API_KEY });
+        const ai = new GoogleGenAI({ apiKey: __APP_ENV__ });
         const response = await ai.models.generateContent({
           model: 'gemini-3-flash-preview',
           contents: { parts: [{ inlineData: { mimeType: file.type, data: base64Data } }, { text: "Extract medicine details. Return JSON {medicines: [{name, dosage, frequency, schedule:[], instruction}]}." }] },
