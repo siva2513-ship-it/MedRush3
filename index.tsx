@@ -638,23 +638,10 @@ const MedRushApp = () => {
     initAudio();
     setIsPlayingAudio(true);
     try {
-      const response = await ai.models.generateContent({
-        model: "gemini-2.5-flash-preview-tts",
-        contents: [{ parts: [{ text: `Say this in ${lang}: ${text}` }] }],
-        config: {
-          responseModalities: [Modality.AUDIO],
-          speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: 'Kore' } } }
-        }
-      });
-      const base64Audio = response.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data;
-      if (base64Audio && audioContextRef.current) {
-        const audioBuffer = await decodeAudioData(decode(base64Audio), audioContextRef.current, 24000, 1);
-        const source = audioContextRef.current.createBufferSource();
-        source.buffer = audioBuffer;
-        source.connect(audioContextRef.current.destination);
-        source.onended = () => setIsPlayingAudio(false);
-        source.start();
-      }
+      const handleSpeak = async (text: string) => {
+      console.log("Voice temporarily disabled");
+    };
+
     } catch (e) { setIsPlayingAudio(false); }
   };
 
