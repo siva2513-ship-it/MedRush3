@@ -1,4 +1,3 @@
-console.log("ENV CHECK:", __APP_ENV__);
 
 import React, { useState, useRef } from 'react';
 import { createRoot } from 'react-dom/client';
@@ -22,9 +21,12 @@ import {
   Plus,
   Users,
   Building2,
-  Trash2
+  Trash2,
+  AlertCircle,
+  FileText,
+  MessageSquare
 } from 'lucide-react';
-
+import { GoogleGenAI, Type, Modality } from "@google/genai";
 
 // --- Types & Constants ---
 
@@ -38,6 +40,7 @@ interface Medicine {
   frequency: string;
   schedule: ('morning' | 'afternoon' | 'evening')[];
   instruction: string;
+  note?: string;
 }
 
 interface ManagedPatient {
@@ -73,7 +76,9 @@ const TRANSLATIONS = {
     morning: 'Morning',
     afternoon: 'Afternoon',
     evening: 'Evening',
-    scanning: 'Scanning Prescription...',
+    scanning: 'Analyzing Prescription...',
+    scanError: 'Could not read the prescription clearly. Please try a sharper photo.',
+    scanSuccess: 'Medicines extracted successfully!',
     welcome: 'Welcome',
     logout: 'Logout',
     callIncoming: 'Incoming Call',
@@ -90,6 +95,7 @@ const TRANSLATIONS = {
     medName: 'Medicine Name',
     dosage: 'Dosage',
     instruction: 'Instruction',
+    note: 'Special Note',
     saveMed: 'Save Medicine',
     back: 'Back to List',
     viewMeds: 'View Schedule'
@@ -112,7 +118,9 @@ const TRANSLATIONS = {
     morning: 'ఉదయం',
     afternoon: 'మధ్యాహ్నం',
     evening: 'సాయంత్రం',
-    scanning: 'ప్రిస్క్రిప్షన్ స్కాన్ చేస్తోంది...',
+    scanning: 'ప్రిస్క్రిప్షన్ విశ్లేషిస్తోంది...',
+    scanError: 'ప్రిస్క్రిప్షన్ సరిగ్గా చదవలేకపోయాము. దయచేసి స్పష్టమైన ఫోటోను ప్రయత్నించండి.',
+    scanSuccess: 'మందుల వివరాలు విజయవంతంగా పొందబడ్డాయి!',
     welcome: 'స్వాగతం',
     logout: 'లాగ్ అవుట్',
     callIncoming: 'ఇన్కమింగ్ కాల్',
@@ -129,6 +137,7 @@ const TRANSLATIONS = {
     medName: 'మందు పేరు',
     dosage: 'మోతాదు',
     instruction: 'సూచన',
+    note: 'ప్రత్యేక గమనిక',
     saveMed: 'మందును సేవ్ చేయండి',
     back: 'జాబితాకు తిరిగి వెళ్ళు',
     viewMeds: 'షెడ్యూల్ చూడండి'
@@ -151,7 +160,9 @@ const TRANSLATIONS = {
     morning: 'सुबह',
     afternoon: 'दोपहर',
     evening: 'शाम',
-    scanning: 'पर्चा स्कैन किया जा रहा है...',
+    scanning: 'पर्चा विश्लेषण किया जा रहा है...',
+    scanError: 'पर्चा स्पष्ट रूप से नहीं पढ़ा जा सका। कृपया स्पष्ट फोटो का प्रयास करें।',
+    scanSuccess: 'दवाओं का विवरण सफलतापूर्वक निकाला गया!',
     welcome: 'स्वागत है',
     logout: 'लॉग आउट',
     callIncoming: 'आने वाली कॉल',
@@ -168,6 +179,7 @@ const TRANSLATIONS = {
     medName: 'दवा का नाम',
     dosage: 'खुराक',
     instruction: 'निर्देश',
+    note: 'विशेष नोट',
     saveMed: 'दवा सहेजें',
     back: 'सूची पर वापस जाएं',
     viewMeds: 'शेड्यूल देखें'
@@ -374,7 +386,7 @@ const LoginScreen = ({ t, role, userData, setUserData, onLogin }: any) => (
   </div>
 );
 
-const MedicineColumn = ({ title, time, medicines, t }: { title: string, time: 'morning' | 'afternoon' | 'evening', medicines: Medicine[], t: any }) => {
+const MedicineColumn = ({ title, time, medicines, t, onSpeak, isPlayingAudio }: { title: string, time: 'morning' | 'afternoon' | 'evening', medicines: Medicine[], t: any, onSpeak: (m: Medicine) => void, isPlayingAudio: boolean }) => {
   const filtered = medicines.filter(m => m.schedule.includes(time));
   return (
     <div className="flex-1 min-w-[280px] bg-white/5 backdrop-blur-md rounded-3xl border border-white/10 p-6 shadow-xl">
@@ -384,12 +396,34 @@ const MedicineColumn = ({ title, time, medicines, t }: { title: string, time: 'm
       </div>
       <div className="space-y-4">
         {filtered.length > 0 ? filtered.map((med, i) => (
-          <div key={i} className="bg-white/5 border border-white/10 rounded-2xl p-4 hover:border-blue-400/40 transition-all group">
+          <div key={i} className="bg-white/5 border border-white/10 rounded-2xl p-5 hover:border-blue-400/40 transition-all group animate-in slide-in-from-bottom-2 fade-in duration-300 relative">
             <div className="flex justify-between items-start mb-2 gap-2">
-              <span className="font-bold text-white text-lg leading-tight group-hover:text-blue-400 transition-colors">{med.name}</span>
-              <span className="text-[10px] uppercase tracking-widest bg-blue-500/20 text-blue-300 px-2 py-1 rounded-md shrink-0 border border-blue-500/20">{med.dosage}</span>
+              <div className="flex-1">
+                <span className="font-bold text-white text-lg block leading-tight group-hover:text-blue-400 transition-colors">{med.name}</span>
+                <span className="text-[10px] inline-block mt-1 uppercase tracking-widest bg-blue-500/20 text-blue-300 px-2 py-0.5 rounded-md border border-blue-500/20">{med.dosage}</span>
+              </div>
+              <button 
+                onClick={() => onSpeak(med)}
+                disabled={isPlayingAudio}
+                className="p-2 bg-white/5 hover:bg-white/10 rounded-xl text-white/40 hover:text-blue-400 transition-all disabled:opacity-50"
+              >
+                <Volume2 size={18} className={isPlayingAudio ? 'animate-pulse' : ''} />
+              </button>
             </div>
-            <p className="text-sm text-white/50 italic">"{med.instruction}"</p>
+            <div className="space-y-2 mt-3">
+              <p className="text-sm text-white/70 flex items-start gap-2">
+                <FileText size={14} className="mt-1 shrink-0 text-blue-400/60" />
+                {med.instruction}
+              </p>
+              {med.note && (
+                <div className="pt-2 border-t border-white/5">
+                  <p className="text-[11px] text-yellow-500/80 italic font-medium flex items-start gap-2 bg-yellow-500/5 p-2 rounded-lg">
+                    <AlertCircle size={12} className="mt-0.5 shrink-0" />
+                    {med.note}
+                  </p>
+                </div>
+              )}
+            </div>
           </div>
         )) : (
           <div className="py-10 text-center text-white/20 flex flex-col items-center gap-2">
@@ -402,7 +436,7 @@ const MedicineColumn = ({ title, time, medicines, t }: { title: string, time: 'm
   );
 };
 
-const DashboardScreen = ({ t, role, userData, medicines, managedPatients, onAddPatient, onUpdatePatientMeds, isScanning, onLogout, onScan, onStartCall, onSpeak, isPlayingAudio }: any) => {
+const DashboardScreen = ({ t, role, userData, medicines, managedPatients, onAddPatient, onUpdatePatientMeds, isScanning, onLogout, onScan, onStartCall, onSpeak, isPlayingAudio, scanMessage }: any) => {
   const [selectedPatientIdx, setSelectedPatientIdx] = useState<number | null>(null);
   const [newPersonName, setNewPersonName] = useState('');
   const [newPersonPhone, setNewPersonPhone] = useState('');
@@ -411,6 +445,7 @@ const DashboardScreen = ({ t, role, userData, medicines, managedPatients, onAddP
   const [mName, setMName] = useState('');
   const [mDosage, setMDosage] = useState('');
   const [mInstr, setMInstr] = useState('');
+  const [mNote, setMNote] = useState('');
   const [mSchedule, setMSchedule] = useState<('morning' | 'afternoon' | 'evening')[]>([]);
 
   const handleAddPerson = () => {
@@ -428,13 +463,15 @@ const DashboardScreen = ({ t, role, userData, medicines, managedPatients, onAddP
         dosage: mDosage,
         frequency: mSchedule.length + ' times a day',
         schedule: mSchedule,
-        instruction: mInstr
+        instruction: mInstr,
+        note: mNote
       };
       const updatedMeds = [...managedPatients[selectedPatientIdx].medicines, newMed];
       onUpdatePatientMeds(selectedPatientIdx, updatedMeds);
       setMName('');
       setMDosage('');
       setMInstr('');
+      setMNote('');
       setMSchedule([]);
     }
   };
@@ -446,6 +483,13 @@ const DashboardScreen = ({ t, role, userData, medicines, managedPatients, onAddP
       <div className="absolute top-0 right-0 w-[400px] h-[400px] bg-blue-600/5 blur-[120px] rounded-full" />
       <div className="absolute bottom-0 left-0 w-[400px] h-[400px] bg-blue-400/5 blur-[120px] rounded-full" />
       
+      {scanMessage && (
+        <div className={`fixed top-4 left-1/2 -translate-x-1/2 z-[100] px-6 py-3 rounded-2xl flex items-center gap-2 shadow-2xl border backdrop-blur-xl animate-in fade-in slide-in-from-top-4 duration-300 ${scanMessage.type === 'error' ? 'bg-red-500/20 border-red-500/50 text-red-200' : 'bg-green-500/20 border-green-500/50 text-green-200'}`}>
+          {scanMessage.type === 'error' ? <AlertCircle size={18} /> : <CheckCircle2 size={18} />}
+          <span className="text-sm font-bold">{scanMessage.text}</span>
+        </div>
+      )}
+
       <header className="flex justify-between items-center mb-12 relative z-10">
         <div className="flex items-center gap-4">
           <div className="w-14 h-14 bg-blue-600/20 rounded-2xl flex items-center justify-center border border-blue-500/20 shadow-lg shadow-blue-500/10">
@@ -468,12 +512,15 @@ const DashboardScreen = ({ t, role, userData, medicines, managedPatients, onAddP
       {role === 'patient' ? (
         <>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-12 relative z-10">
-            <label className="relative flex flex-col items-center justify-center h-48 rounded-[2.5rem] border border-white/10 bg-white/5 backdrop-blur-md hover:bg-white/10 hover:border-blue-500/50 cursor-pointer transition-all group overflow-hidden shadow-2xl">
+            <label className={`relative flex flex-col items-center justify-center h-48 rounded-[2.5rem] border border-white/10 bg-white/5 backdrop-blur-md hover:bg-white/10 hover:border-blue-500/50 cursor-pointer transition-all group overflow-hidden shadow-2xl ${isScanning ? 'pointer-events-none opacity-80' : ''}`}>
               <div className="absolute inset-0 bg-blue-500/0 group-hover:bg-blue-500/5 transition-colors" />
               {isScanning ? (
                 <div className="flex flex-col items-center gap-3">
-                  <Loader2 className="animate-spin text-blue-400" size={40} />
-                  <span className="text-blue-400 font-bold tracking-widest text-xs uppercase">{t.scanning}</span>
+                  <div className="relative">
+                    <Loader2 className="animate-spin text-blue-400" size={48} />
+                    <Activity className="absolute inset-0 m-auto text-blue-400/50" size={20} />
+                  </div>
+                  <span className="text-blue-400 font-bold tracking-widest text-xs uppercase animate-pulse">{t.scanning}</span>
                 </div>
               ) : (
                 <>
@@ -483,7 +530,7 @@ const DashboardScreen = ({ t, role, userData, medicines, managedPatients, onAddP
                   <span className="font-bold text-xl">{t.scanPrescription}</span>
                 </>
               )}
-              <input type="file" className="hidden" accept="image/*" onChange={onScan} />
+              <input type="file" className="hidden" accept="image/*" capture="environment" onChange={onScan} />
             </label>
             <button onClick={onStartCall} className="flex flex-col items-center justify-center h-48 rounded-[2.5rem] border border-white/10 bg-white/5 backdrop-blur-md hover:bg-white/10 hover:border-blue-500/50 transition-all group shadow-2xl overflow-hidden">
               <div className="relative w-16 h-16 bg-white/5 rounded-2xl flex items-center justify-center mb-4 group-hover:scale-110 transition-transform">
@@ -493,9 +540,9 @@ const DashboardScreen = ({ t, role, userData, medicines, managedPatients, onAddP
             </button>
           </div>
           <div className="flex flex-col lg:flex-row gap-6 pb-12 relative z-10">
-            <MedicineColumn title={t.morning} time="morning" medicines={medicines} t={t} />
-            <MedicineColumn title={t.afternoon} time="afternoon" medicines={medicines} t={t} />
-            <MedicineColumn title={t.evening} time="evening" medicines={medicines} t={t} />
+            <MedicineColumn title={t.morning} time="morning" medicines={medicines} t={t} onSpeak={(m) => onSpeak(`Take ${m.name}, ${m.dosage}. ${m.instruction}. ${m.note ? 'Warning: ' + m.note : ''}`)} isPlayingAudio={isPlayingAudio} />
+            <MedicineColumn title={t.afternoon} time="afternoon" medicines={medicines} t={t} onSpeak={(m) => onSpeak(`Take ${m.name}, ${m.dosage}. ${m.instruction}. ${m.note ? 'Warning: ' + m.note : ''}`)} isPlayingAudio={isPlayingAudio} />
+            <MedicineColumn title={t.evening} time="evening" medicines={medicines} t={t} onSpeak={(m) => onSpeak(`Take ${m.name}, ${m.dosage}. ${m.instruction}. ${m.note ? 'Warning: ' + m.note : ''}`)} isPlayingAudio={isPlayingAudio} />
           </div>
         </>
       ) : (
@@ -520,10 +567,11 @@ const DashboardScreen = ({ t, role, userData, medicines, managedPatients, onAddP
                {role === 'nurse' && (
                  <div className="bg-white/5 p-8 rounded-[2.5rem] border border-white/10 mb-12">
                    <h3 className="text-xl font-bold mb-6 flex items-center gap-2"><Plus className="text-blue-400" /> {t.addMed}</h3>
-                   <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+                   <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 mb-6">
                       <input value={mName} onChange={e => setMName(e.target.value)} placeholder={t.medName} className="bg-white/5 border border-white/10 p-4 rounded-xl outline-none focus:ring-2 focus:ring-blue-500/50" />
                       <input value={mDosage} onChange={e => setMDosage(e.target.value)} placeholder={t.dosage} className="bg-white/5 border border-white/10 p-4 rounded-xl outline-none focus:ring-2 focus:ring-blue-500/50" />
                       <input value={mInstr} onChange={e => setMInstr(e.target.value)} placeholder={t.instruction} className="bg-white/5 border border-white/10 p-4 rounded-xl outline-none focus:ring-2 focus:ring-blue-500/50" />
+                      <input value={mNote} onChange={e => setMNote(e.target.value)} placeholder={t.note} className="bg-white/5 border border-white/10 p-4 rounded-xl outline-none focus:ring-2 focus:ring-blue-500/50 md:col-span-2" />
                       <div className="flex gap-2">
                         {(['morning', 'afternoon', 'evening'] as const).map(time => (
                           <button 
@@ -543,9 +591,9 @@ const DashboardScreen = ({ t, role, userData, medicines, managedPatients, onAddP
                )}
 
                <div className="flex flex-col lg:flex-row gap-6 pb-12">
-                  <MedicineColumn title={t.morning} time="morning" medicines={selectedPatient.medicines} t={t} />
-                  <MedicineColumn title={t.afternoon} time="afternoon" medicines={selectedPatient.medicines} t={t} />
-                  <MedicineColumn title={t.evening} time="evening" medicines={selectedPatient.medicines} t={t} />
+                  <MedicineColumn title={t.morning} time="morning" medicines={selectedPatient.medicines} t={t} onSpeak={(m) => onSpeak(`Take ${m.name}, ${m.dosage}. ${m.instruction}. ${m.note ? 'Warning: ' + m.note : ''}`)} isPlayingAudio={isPlayingAudio} />
+                  <MedicineColumn title={t.afternoon} time="afternoon" medicines={selectedPatient.medicines} t={t} onSpeak={(m) => onSpeak(`Take ${m.name}, ${m.dosage}. ${m.instruction}. ${m.note ? 'Warning: ' + m.note : ''}`)} isPlayingAudio={isPlayingAudio} />
+                  <MedicineColumn title={t.evening} time="evening" medicines={selectedPatient.medicines} t={t} onSpeak={(m) => onSpeak(`Take ${m.name}, ${m.dosage}. ${m.instruction}. ${m.note ? 'Warning: ' + m.note : ''}`)} isPlayingAudio={isPlayingAudio} />
                </div>
             </div>
           ) : (
@@ -623,6 +671,7 @@ const MedRushApp = () => {
   const [managedPatients, setManagedPatients] = useState<ManagedPatient[]>([]);
   const [medicines, setMedicines] = useState<Medicine[]>([]);
   const [isScanning, setIsScanning] = useState(false);
+  const [scanMessage, setScanMessage] = useState<{ text: string, type: 'success' | 'error' } | null>(null);
   const [isCalling, setIsCalling] = useState(false);
   const [isCallAnswered, setIsCallAnswered] = useState(false);
   const [isPlayingAudio, setIsPlayingAudio] = useState(false);
@@ -632,43 +681,130 @@ const MedRushApp = () => {
 
   const initAudio = () => {
     if (!audioContextRef.current) audioContextRef.current = new (window.AudioContext || (window as any).webkitAudioContext)({ sampleRate: 24000 });
+    if (audioContextRef.current.state === 'suspended') audioContextRef.current.resume();
+  };
+
+  const showScanMessage = (text: string, type: 'success' | 'error') => {
+    setScanMessage({ text, type });
+    setTimeout(() => setScanMessage(null), 5000);
   };
 
   const handleSpeak = async (text: string) => {
     initAudio();
     setIsPlayingAudio(true);
     try {
-      const handleSpeak = async (text: string) => {
-      console.log("Voice temporarily disabled");
-    };
-
-    } catch (e) { setIsPlayingAudio(false); }
+      const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+      const response = await ai.models.generateContent({
+        model: "gemini-2.5-flash-preview-tts",
+        contents: [{ parts: [{ text: `Say this naturally in ${lang}: ${text}` }] }],
+        config: {
+          responseModalities: [Modality.AUDIO],
+          speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: 'Kore' } } }
+        }
+      });
+      const base64Audio = response.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data;
+      if (base64Audio && audioContextRef.current) {
+        const audioBuffer = await decodeAudioData(decode(base64Audio), audioContextRef.current, 24000, 1);
+        const source = audioContextRef.current.createBufferSource();
+        source.buffer = audioBuffer;
+        source.connect(audioContextRef.current.destination);
+        source.onended = () => setIsPlayingAudio(false);
+        source.start();
+      }
+    } catch (e) { 
+      console.error("TTS Error:", e);
+      setIsPlayingAudio(false); 
+    }
   };
 
-  const res = await fetch('/api/gemini', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      base64: base64Data,
-      mimeType: file.type
-    })
-  });
+  const handleScan = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setIsScanning(true);
+    
+    const reader = new FileReader();
+    reader.onload = async (ev) => {
+      const fullBase64 = ev.target?.result as string;
+      const base64Data = fullBase64.split(',')[1];
+      const mimeType = file.type || 'image/jpeg';
 
-  const result = await res.json();
+      try {
+        const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+        const response = await ai.models.generateContent({
+          model: 'gemini-3-flash-preview',
+          contents: [
+            {
+              parts: [
+                { inlineData: { mimeType, data: base64Data } },
+                { text: "CRITICAL: You are an expert medical OCR assistant. Extract ALL medicine details from this prescription. Even if text is slightly blurry, use your knowledge of common drug names to infer correctly. For each medicine, provide: name, dosage (e.g., 500mg), frequency (how many times per day), schedule (list 'morning', 'afternoon', 'evening' as applicable), detailed instruction (e.g., 'Take after food with warm water'), and any specific medical note or warning. Return ONLY a JSON object." }
+              ]
+            }
+          ],
+          config: { 
+            responseMimeType: "application/json",
+            responseSchema: {
+              type: Type.OBJECT,
+              properties: {
+                medicines: {
+                  type: Type.ARRAY,
+                  items: {
+                    type: Type.OBJECT,
+                    properties: {
+                      name: { type: Type.STRING },
+                      dosage: { type: Type.STRING },
+                      frequency: { type: Type.STRING },
+                      schedule: { 
+                        type: Type.ARRAY, 
+                        items: { type: Type.STRING } 
+                      },
+                      instruction: { type: Type.STRING, description: "Detailed intake instructions." },
+                      note: { type: Type.STRING, description: "Specific warnings or additional notes." }
+                    },
+                    required: ["name", "dosage", "frequency", "schedule", "instruction"]
+                  }
+                }
+              },
+              required: ["medicines"]
+            }
+          }
+        });
 
-  const parsed = JSON.parse(result.text || '{}');
+        const rawText = response.text;
+        if (!rawText) throw new Error("Empty response from AI");
+        
+        const cleanedText = rawText.replace(/```json/g, '').replace(/```/g, '').trim();
+        const data = JSON.parse(cleanedText);
 
-  if (parsed.medicines) {
-    setMedicines(parsed.medicines);
-  }
-
+        if (data && Array.isArray(data.medicines)) {
+          const normalizedMeds = data.medicines.map((m: any) => ({
+            ...m,
+            schedule: m.schedule.map((s: string) => s.toLowerCase().trim()).filter((s: string) => ['morning', 'afternoon', 'evening'].includes(s))
+          }));
+          setMedicines(normalizedMeds);
+          showScanMessage(t.scanSuccess, 'success');
+        } else {
+          throw new Error("Invalid data structure received");
+        }
+      } catch (err) { 
+        console.error("Scan error:", err);
+        showScanMessage(t.scanError, 'error');
+      } finally { 
+        setIsScanning(false); 
+      }
+    };
+    reader.onerror = () => {
+      setIsScanning(false);
+      showScanMessage(t.scanError, 'error');
+    };
+    reader.readAsDataURL(file);
+  };
 
   const answerCall = async () => {
     setIsCallAnswered(true);
     const medList = medicines.map(m => m.name).join(', ');
-    const msg = medicines.length > 0 ? `Hello ${userData.name}, take medicines: ${medList}.` : `Hello ${userData.name}, MedRush reminder.`;
+    const msg = medicines.length > 0 ? `Hello ${userData.name}, remember to take: ${medList}.` : `Hello ${userData.name}, MedRush reminder.`;
     await handleSpeak(msg);
-    setTimeout(() => { setIsCalling(false); setIsCallAnswered(false); }, 10000);
+    setTimeout(() => { setIsCalling(false); setIsCallAnswered(false); }, 12000);
   };
 
   return (
@@ -689,6 +825,7 @@ const MedRushApp = () => {
             setManagedPatients(prev => prev.map((p, i) => i === idx ? { ...p, medicines: meds } : p));
           }}
           isScanning={isScanning}
+          scanMessage={scanMessage}
           onLogout={() => { setScreen('splash'); setRole(null); setUserData({ name: '', phone: '', disease: '' }); }}
           onScan={handleScan}
           onStartCall={() => setIsCalling(true)}
@@ -697,7 +834,7 @@ const MedRushApp = () => {
         />
       )}
       {isCalling && (
-        <div className="fixed inset-0 z-50 bg-[#0a0b1e] flex flex-col items-center justify-between p-12 text-white">
+        <div className="fixed inset-0 z-50 bg-[#0a0b1e] flex flex-col items-center justify-between p-12 text-white animate-in zoom-in duration-300">
            <div className="flex flex-col items-center mt-20">
               <div className="w-24 h-24 bg-blue-600 rounded-full flex items-center justify-center mb-6 animate-pulse">
                 <HeartPulse size={48} />
@@ -708,15 +845,15 @@ const MedRushApp = () => {
            <div className="flex gap-12 mb-20">
               {!isCallAnswered ? (
                 <>
-                  <button onClick={() => setIsCalling(false)} className="w-20 h-20 bg-red-500 rounded-full flex items-center justify-center shadow-lg"><X size={32} /></button>
-                  <button onClick={answerCall} className="w-20 h-20 bg-green-500 rounded-full flex items-center justify-center shadow-lg animate-bounce"><Phone size={32} /></button>
+                  <button onClick={() => setIsCalling(false)} className="w-20 h-20 bg-red-500 rounded-full flex items-center justify-center shadow-lg active:scale-90 transition-transform"><X size={32} /></button>
+                  <button onClick={answerCall} className="w-20 h-20 bg-green-500 rounded-full flex items-center justify-center shadow-lg animate-bounce active:scale-90 transition-transform"><Phone size={32} /></button>
                 </>
               ) : (
                 <div className="flex flex-col items-center gap-4">
-                  <div className="flex gap-2">
-                    {[1, 2, 3, 4, 5].map(i => <div key={i} className="w-2 h-10 bg-blue-400 rounded-full animate-pulse" style={{ animationDelay: `${i * 0.1}s` }} />)}
+                  <div className="flex gap-2 h-10 items-end">
+                    {[1, 2, 3, 4, 5, 6, 7].map(i => <div key={i} className="w-2 bg-blue-400 rounded-full animate-wave" style={{ animationDelay: `${i * 0.1}s` }} />)}
                   </div>
-                  <button onClick={() => setIsCalling(false)} className="mt-8 bg-white/10 px-8 py-3 rounded-full">End Call</button>
+                  <button onClick={() => setIsCalling(false)} className="mt-8 bg-white/10 hover:bg-white/20 px-8 py-3 rounded-full font-bold uppercase tracking-widest text-xs">End Call</button>
                 </div>
               )}
            </div>
