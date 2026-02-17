@@ -659,47 +659,20 @@ const MedRushApp = () => {
     } catch (e) { setIsPlayingAudio(false); }
   };
 
-  const handleScan = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    setIsScanning(true);
-    const reader = new FileReader();
-    reader.onload = async (ev) => {
-      const base64Data = (ev.target?.result as string).split(',')[1];
-      try {
-        const ai = new GoogleGenAI({ apiKey: __APP_ENV__ });
-        const response = await ai.models.generateContent({
-          model: 'gemini-3-flash-preview',
-          contents: { parts: [{ inlineData: { mimeType: file.type, data: base64Data } }, { text: "Extract medicine details. Return JSON {medicines: [{name, dosage, frequency, schedule:[], instruction}]}." }] },
-          config: { 
-            responseMimeType: "application/json",
-            responseSchema: {
-              type: Type.OBJECT,
-              properties: {
-                medicines: {
-                  type: Type.ARRAY,
-                  items: {
-                    type: Type.OBJECT,
-                    properties: {
-                      name: { type: Type.STRING },
-                      dosage: { type: Type.STRING },
-                      frequency: { type: Type.STRING },
-                      schedule: { type: Type.ARRAY, items: { type: Type.STRING } },
-                      instruction: { type: Type.STRING }
-                    },
-                    required: ["name", "dosage", "frequency", "schedule", "instruction"]
-                  }
-                }
-              }
-            }
-          }
-        });
-        const data = JSON.parse(response.text || '{}');
-        if (data.medicines) setMedicines(data.medicines);
-      } catch (err) { console.error(err); } finally { setIsScanning(false); }
-    };
-    reader.readAsDataURL(file);
-  };
+  const res = await fetch('/api/gemini', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      base64: base64Data,
+      mimeType: file.type
+    })
+  });
+
+  const data = await res.json();
+  const parsed = JSON.parse(data.text || '{}');
+
+  if (parsed.medicines) setMedicines(parsed.medicines);
+
 
   const answerCall = async () => {
     setIsCallAnswered(true);
