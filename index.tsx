@@ -24,7 +24,7 @@ import {
   Building2,
   Trash2
 } from 'lucide-react';
-import { GoogleGenAI, Type, Modality } from "@google/genai";
+
 
 // --- Types & Constants ---
 
@@ -638,7 +638,6 @@ const MedRushApp = () => {
     initAudio();
     setIsPlayingAudio(true);
     try {
-      const ai = new GoogleGenAI({ apiKey: __APP_ENV__ });
       const response = await ai.models.generateContent({
         model: "gemini-2.5-flash-preview-tts",
         contents: [{ parts: [{ text: `Say this in ${lang}: ${text}` }] }],
