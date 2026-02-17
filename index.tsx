@@ -668,10 +668,13 @@ const MedRushApp = () => {
     })
   });
 
-  const data = await res.json();
-  const parsed = JSON.parse(data.text || '{}');
+  const result = await res.json();
 
-  if (parsed.medicines) setMedicines(parsed.medicines);
+  const parsed = JSON.parse(result.text || '{}');
+
+  if (parsed.medicines) {
+    setMedicines(parsed.medicines);
+  }
 
 
   const answerCall = async () => {
