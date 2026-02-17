@@ -24,7 +24,8 @@ import {
   Trash2,
   AlertCircle,
   FileText,
-  MessageSquare
+  MessageSquare,
+  ShieldAlert
 } from 'lucide-react';
 import { GoogleGenAI, Type, Modality } from "@google/genai";
 
@@ -77,7 +78,7 @@ const TRANSLATIONS = {
     afternoon: 'Afternoon',
     evening: 'Evening',
     scanning: 'Analyzing Prescription...',
-    scanError: 'Could not read the prescription clearly. Please try a sharper photo.',
+    scanError: 'Could not read clearly. Ensure you have set the API_KEY in Vercel.',
     scanSuccess: 'Medicines extracted successfully!',
     welcome: 'Welcome',
     logout: 'Logout',
@@ -119,7 +120,7 @@ const TRANSLATIONS = {
     afternoon: 'మధ్యాహ్నం',
     evening: 'సాయంత్రం',
     scanning: 'ప్రిస్క్రిప్షన్ విశ్లేషిస్తోంది...',
-    scanError: 'ప్రిస్క్రిప్షన్ సరిగ్గా చదవలేకపోయాము. దయచేసి స్పష్టమైన ఫోటోను ప్రయత్నించండి.',
+    scanError: 'ప్రిస్క్రిప్షన్ సరిగ్గా చదవలేకపోయాము. Vercelలో API_KEY సెట్ చేయబడిందో లేదో చూడండి.',
     scanSuccess: 'మందుల వివరాలు విజయవంతంగా పొందబడ్డాయి!',
     welcome: 'స్వాగతం',
     logout: 'లాగ్ అవుట్',
@@ -161,7 +162,7 @@ const TRANSLATIONS = {
     afternoon: 'दोपहर',
     evening: 'शाम',
     scanning: 'पर्चा विश्लेषण किया जा रहा है...',
-    scanError: 'पर्चा स्पष्ट रूप से नहीं पढ़ा जा सका। कृपया स्पष्ट फोटो का प्रयास करें।',
+    scanError: 'पर्चा स्पष्ट रूप से नहीं पढ़ा जा सका। कृपया Vercel में API_KEY की जाँच करें।',
     scanSuccess: 'दवाओं का विवरण सफलतापूर्वक निकाला गया!',
     welcome: 'स्वागत है',
     logout: 'लॉग आउट',
@@ -693,10 +694,11 @@ const MedRushApp = () => {
     initAudio();
     setIsPlayingAudio(true);
     try {
+      // Create new instance to pick up latest process.env.API_KEY
       const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
       const response = await ai.models.generateContent({
         model: "gemini-2.5-flash-preview-tts",
-        contents: [{ parts: [{ text: `Say this naturally in ${lang}: ${text}` }] }],
+        contents: { parts: [{ text: `Say this naturally in ${lang}: ${text}` }] },
         config: {
           responseModalities: [Modality.AUDIO],
           speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: 'Kore' } } }
@@ -710,6 +712,8 @@ const MedRushApp = () => {
         source.connect(audioContextRef.current.destination);
         source.onended = () => setIsPlayingAudio(false);
         source.start();
+      } else {
+        setIsPlayingAudio(false);
       }
     } catch (e) { 
       console.error("TTS Error:", e);
@@ -729,17 +733,16 @@ const MedRushApp = () => {
       const mimeType = file.type || 'image/jpeg';
 
       try {
+        // Create new instance to pick up latest process.env.API_KEY
         const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
         const response = await ai.models.generateContent({
           model: 'gemini-3-flash-preview',
-          contents: [
-            {
-              parts: [
-                { inlineData: { mimeType, data: base64Data } },
-                { text: "CRITICAL: You are an expert medical OCR assistant. Extract ALL medicine details from this prescription. Even if text is slightly blurry, use your knowledge of common drug names to infer correctly. For each medicine, provide: name, dosage (e.g., 500mg), frequency (how many times per day), schedule (list 'morning', 'afternoon', 'evening' as applicable), detailed instruction (e.g., 'Take after food with warm water'), and any specific medical note or warning. Return ONLY a JSON object." }
-              ]
-            }
-          ],
+          contents: {
+            parts: [
+              { inlineData: { mimeType, data: base64Data } },
+              { text: "CRITICAL: You are an expert medical OCR assistant. Extract ALL medicine details from this prescription. Even if text is slightly blurry, use your knowledge of common drug names to infer correctly. For each medicine, provide: name, dosage (e.g., 500mg), frequency (how many times per day), schedule (list 'morning', 'afternoon', 'evening' as applicable), detailed instruction (e.g., 'Take after food with warm water'), and any specific medical note or warning. Return ONLY a JSON object." }
+            ]
+          },
           config: { 
             responseMimeType: "application/json",
             responseSchema: {
@@ -785,9 +788,10 @@ const MedRushApp = () => {
         } else {
           throw new Error("Invalid data structure received");
         }
-      } catch (err) { 
+      } catch (err: any) { 
         console.error("Scan error:", err);
-        showScanMessage(t.scanError, 'error');
+        const msg = err?.message?.includes('API_KEY') ? t.scanError : t.scanError;
+        showScanMessage(msg, 'error');
       } finally { 
         setIsScanning(false); 
       }
