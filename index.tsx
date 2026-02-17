@@ -1,3 +1,4 @@
+console.log("ENV CHECK:", import.meta.env.VITE_GEMINI_API_KEY);
 
 import React, { useState, useRef } from 'react';
 import { createRoot } from 'react-dom/client';
