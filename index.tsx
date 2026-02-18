@@ -1,5 +1,5 @@
 
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { createRoot } from 'react-dom/client';
 import { 
   Phone, 
@@ -25,7 +25,9 @@ import {
   AlertCircle,
   FileText,
   MessageSquare,
-  ShieldAlert
+  ShieldAlert,
+  Zap,
+  Sparkles
 } from 'lucide-react';
 import { GoogleGenAI, Type, Modality } from "@google/genai";
 
@@ -78,7 +80,7 @@ const TRANSLATIONS = {
     afternoon: 'Afternoon',
     evening: 'Evening',
     scanning: 'Analyzing Prescription...',
-    scanError: 'Scan Failed. Check if API_KEY is set in Vercel.',
+    scanError: 'Scan Failed. Please ensure lighting is good and the API_KEY is set.',
     scanSuccess: 'Medicines extracted successfully!',
     welcome: 'Welcome',
     logout: 'Logout',
@@ -120,7 +122,7 @@ const TRANSLATIONS = {
     afternoon: 'మధ్యాహ్నం',
     evening: 'సాయంత్రం',
     scanning: 'ప్రిస్క్రిప్షన్ విశ్లేషిస్తోంది...',
-    scanError: 'స్కాన్ విఫలమైంది. Vercelలో API_KEYని తనిఖీ చేయండి.',
+    scanError: 'స్కాన్ విఫలమైంది. దయచేసి వెలుతురు సరిగ్గా ఉండేలా చూసుకోండి.',
     scanSuccess: 'మందుల వివరాలు విజయవంతంగా పొందబడ్డాయి!',
     welcome: 'స్వాగతం',
     logout: 'లాగ్ అవుట్',
@@ -162,7 +164,7 @@ const TRANSLATIONS = {
     afternoon: 'दोपहर',
     evening: 'शाम',
     scanning: 'पर्चा विश्लेषण किया जा रहा है...',
-    scanError: 'स्कैन विफल रहा। Vercel में API_KEY की जाँच करें।',
+    scanError: 'स्कैन विफल रहा। कृपया सुनिश्चित करें कि रोशनी अच्छी है।',
     scanSuccess: 'दवाओं का विवरण सफलतापूर्वक निकाला गया!',
     welcome: 'स्वागत है',
     logout: 'लॉग आउट',
@@ -386,7 +388,7 @@ const MedicineColumn = ({ title, time, medicines, t, onSpeak, isPlayingAudio }: 
             </div>
             <div className="space-y-3 mt-4">
               <p className="text-sm text-white/70 flex items-start gap-3 bg-white/5 p-3 rounded-xl border border-white/5">
-                <FileText size={16} className="mt-0.5 shrink-0 text-blue-400/60" />
+                <FileText size={16} className="mt-1 shrink-0 text-blue-400/60" />
                 <span className="font-medium">{med.instruction}</span>
               </p>
               {med.note && (
@@ -418,6 +420,7 @@ const DashboardScreen = ({ t, role, userData, medicines, managedPatients, onAddP
   const [selectedPatientIdx, setSelectedPatientIdx] = useState<number | null>(null);
   const [newPersonName, setNewPersonName] = useState('');
   const [newPersonPhone, setNewPersonPhone] = useState('');
+  const [scanStatus, setScanStatus] = useState(0);
   
   // New Med Form State
   const [mName, setMName] = useState('');
@@ -425,6 +428,24 @@ const DashboardScreen = ({ t, role, userData, medicines, managedPatients, onAddP
   const [mInstr, setMInstr] = useState('');
   const [mNote, setMNote] = useState('');
   const [mSchedule, setMSchedule] = useState<('morning' | 'afternoon' | 'evening')[]>([]);
+
+  useEffect(() => {
+    let interval: any;
+    if (isScanning) {
+      interval = setInterval(() => {
+        setScanStatus(prev => (prev + 1) % 3);
+      }, 3000);
+    } else {
+      setScanStatus(0);
+    }
+    return () => clearInterval(interval);
+  }, [isScanning]);
+
+  const scanSteps = [
+    "Enhancing Image Quality...",
+    "Deciphering Handwriting...",
+    "Cross-referencing Medical Records..."
+  ];
 
   const handleAddPerson = () => {
     if (newPersonName && newPersonPhone) {
@@ -492,9 +513,15 @@ const DashboardScreen = ({ t, role, userData, medicines, managedPatients, onAddP
             <label className={`relative flex flex-col items-center justify-center h-56 rounded-[3rem] border border-white/10 bg-white/5 backdrop-blur-xl hover:bg-white/10 hover:border-blue-500/50 cursor-pointer transition-all group overflow-hidden shadow-2xl ${isScanning ? 'pointer-events-none opacity-80' : ''}`}>
               <div className="absolute inset-0 bg-blue-600/0 group-hover:bg-blue-600/5 transition-colors" />
               {isScanning ? (
-                <div className="flex flex-col items-center gap-4">
-                  <Loader2 className="animate-spin text-blue-400" size={56} />
-                  <span className="text-blue-400 font-black tracking-[0.2em] text-xs uppercase animate-pulse">{t.scanning}</span>
+                <div className="flex flex-col items-center gap-4 text-center px-6">
+                  <div className="relative">
+                    <Loader2 className="animate-spin text-blue-400" size={56} />
+                    <Sparkles className="absolute -top-2 -right-2 text-yellow-400 animate-pulse" size={20} />
+                  </div>
+                  <div className="space-y-1">
+                    <span className="text-blue-400 font-black tracking-[0.2em] text-[10px] uppercase block animate-pulse">{t.scanning}</span>
+                    <span className="text-white/40 font-bold text-xs italic">{scanSteps[scanStatus]}</span>
+                  </div>
                 </div>
               ) : (
                 <>
@@ -727,10 +754,11 @@ const MedRushApp = () => {
           contents: {
             parts: [
               { inlineData: { mimeType, data: base64Data } },
-              { text: "CRITICAL: You are an expert medical OCR assistant. Extract ALL medicine details from this prescription. Even if text is blurry, use context to infer the correct drug. For each medicine, extract: name, dosage (e.g., 500mg), frequency, schedule (list 'morning', 'afternoon', 'evening' as applicable), detailed instruction, and any note/warning. Return ONLY a JSON object." }
+              { text: "CRITICAL: You are an expert medical OCR assistant. Decipher this prescription. Handle messy handwriting. Translate shorthand (OD/BD/TDS/HS) into plain language instructions. If a medication name is blurry, use your knowledge of pharmacology to identify it. Extract: 1. Medicine Name 2. Dosage 3. Frequency 4. Schedule (Morning/Afternoon/Evening) 5. Detailed Instruction (e.g., 'Take 30 mins after food') 6. Notes (warnings/precautions). Return ONLY a JSON object." }
             ]
           },
           config: { 
+            thinkingConfig: { thinkingBudget: 2000 },
             responseMimeType: "application/json",
             responseSchema: {
               type: Type.OBJECT,
@@ -757,7 +785,7 @@ const MedRushApp = () => {
         });
 
         const rawText = response.text;
-        if (!rawText) throw new Error("Empty response from AI engine.");
+        if (!rawText) throw new Error("Empty response from medical engine.");
         
         const data = JSON.parse(rawText.replace(/```json/g, '').replace(/```/g, '').trim());
 
@@ -769,11 +797,10 @@ const MedRushApp = () => {
           setMedicines(normalizedMeds);
           showScanMessage(t.scanSuccess, 'success');
         } else {
-          throw new Error("Medicine data structure missing in AI response.");
+          throw new Error("Medicine data structure not found.");
         }
       } catch (err: any) { 
         console.error("Scan error:", err);
-        // Display full error for Vercel debugging
         showScanMessage(err?.message || t.scanError, 'error');
       } finally { 
         setIsScanning(false); 
@@ -789,7 +816,7 @@ const MedRushApp = () => {
   const answerCall = async () => {
     setIsCallAnswered(true);
     const medList = medicines.map(m => m.name).join(', ');
-    const msg = medicines.length > 0 ? `Hello ${userData.name}, I am your MedRush assistant. Don't forget to take: ${medList}. Please check your instructions.` : `Hello ${userData.name}, MedRush reminder service.`;
+    const msg = medicines.length > 0 ? `Hello ${userData.name}, this is your health assistant. Please remember your: ${medList}. Stay healthy.` : `Hello ${userData.name}, MedRush reminder service.`;
     await handleSpeak(msg);
     setTimeout(() => { setIsCalling(false); setIsCallAnswered(false); }, 15000);
   };
